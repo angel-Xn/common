@@ -257,7 +257,8 @@ fi
 
 # 更新golang和node版本
 gitsvn https://github.com/sbwml/packages_lang_golang ${HOME_PATH}/feeds/packages/lang/golang
-gitsvn https://github.com/sbwml/feeds_packages_lang_node-prebuilt ${HOME_PATH}/feeds/packages/lang/node
+# node预编译包钉在packages-24.10分支(ipk格式)：默认分支packages-25.12产物改为APK v3格式，lede无apk工具解包必败
+gitsvn https://github.com/sbwml/feeds_packages_lang_node-prebuilt/tree/packages-24.10 ${HOME_PATH}/feeds/packages/lang/node
 
 # store插件依赖
 if [[ -d "${HOME_PATH}/feeds/danshui/relevance/nas-packages/network/services" ]] && [[ ! -d "${HOME_PATH}//package/network/services/ddnsto" ]]; then
