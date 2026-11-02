@@ -396,8 +396,8 @@ cd ${HOME_PATH}
 function Diy_partsh() {
 TIME y "正在执行：自定义文件"
 cd ${HOME_PATH}
-# 运行自定义文件
-${DIY_PT1_SH}
+# 运行自定义文件（用 bash 显式执行，避免文件丢失执行位导致正文静默跳过）
+bash "${DIY_PT1_SH}"
 ./scripts/feeds update -a &>/dev/null
 }
 
