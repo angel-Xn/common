@@ -8,10 +8,10 @@ runs:
       run: |
         cd $HOME_PATH
         if [[ -n "${{ env.TARGET_PROFILE_IMG }}" ]]; then
-           echo "SHANGCHUAN_MINGCHEN=${{ env.SOURCE }}-${{ env.LUCI_EDITION }}-${{ env.TARGET_PROFILE_IMG }}" >> ${GITHUB_ENV}
+           echo "SHANGCHUAN_MINGCHEN=${{ env.SOURCE }}${{ env.VARIANT_TAG }}-${{ env.LUCI_EDITION }}-${{ env.TARGET_PROFILE_IMG }}" >> ${GITHUB_ENV}
            echo "RR_RELEASE=b" >> ${GITHUB_ENV}
         else
-           echo "SHANGCHUAN_MINGCHEN=${{ env.SOURCE }}-${{ env.LUCI_EDITION }}-${{ env.TARGET_PROFILE }}" >> ${GITHUB_ENV}
+           echo "SHANGCHUAN_MINGCHEN=${{ env.SOURCE }}${{ env.VARIANT_TAG }}-${{ env.LUCI_EDITION }}-${{ env.TARGET_PROFILE }}" >> ${GITHUB_ENV}
            echo "RR_RELEASE=a" >> ${GITHUB_ENV}
         fi
         [[ -z "${DATE}" ]] && echo "DATE=$(date "+%Y%m%d%H%M%S")" >> ${GITHUB_ENV}
