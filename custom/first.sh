@@ -230,6 +230,11 @@ Diy_three() {
 Diy_four() {
     cp -Rf "${COMPILE_PATH}" "${LINSHI_COMMON}/${FOLDER_NAME}"
     export DIY_PT1_SH="${LINSHI_COMMON}/${FOLDER_NAME}/diy-part.sh"
+    # 变体自定义脚本：CONFIG_FILE 形如 x86_64-bypass 时优先用 diy-part-bypass.sh
+    local variant_suffix="${CONFIG_FILE#*-}"
+    if [[ "${variant_suffix}" != "${CONFIG_FILE}" && -f "${LINSHI_COMMON}/${FOLDER_NAME}/diy-part-${variant_suffix}.sh" ]]; then
+      export DIY_PT1_SH="${LINSHI_COMMON}/${FOLDER_NAME}/diy-part-${variant_suffix}.sh"
+    fi
     export DIY_PT2_SH="${LINSHI_COMMON}/${FOLDER_NAME}/diy2-part.sh"
 
     echo "DIY_PT1_SH=${DIY_PT1_SH}" >> "${GITHUB_ENV}"

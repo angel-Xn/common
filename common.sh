@@ -108,6 +108,14 @@ variable UPGRADE_DATE="`date -d "$(date +'%Y-%m-%d %H:%M:%S')" +%s`"
 variable GUJIAN_DATE="$(date +%m.%d)"
 variable LICENSES_DOC="${HOME_PATH}/LICENSES/doc"
 
+# 变体后缀（如 x86_64-bypass → -Bypass），用于固件命名与在线更新标签区分
+local variant_suffix="${CONFIG_FILE#*-}"
+if [[ "${variant_suffix}" != "${CONFIG_FILE}" && -n "${variant_suffix}" ]]; then
+  variable VARIANT_TAG="-${variant_suffix^}"
+else
+  variable VARIANT_TAG=""
+fi
+
 # 启动编译时的变量文件
 if [[ "${BENDI_VERSION}" == "2" ]]; then
   install -m 0755 /dev/null "${COMPILE_PATH}/relevance/settings.ini"
@@ -1315,7 +1323,7 @@ done
 TIME g "整理后的文件"
 ls -1
 if ! echo "$TARGET_BOARD" | grep -Eq 'armvirt|armsr'; then
-  rename "s/^openwrt/${GUJIAN_DATE}-${SOURCE}-${LUCI_EDITION}-${LINUX_KERNEL}/" *
+  rename "s/^openwrt/${GUJIAN_DATE}-${SOURCE}${VARIANT_TAG}-${LUCI_EDITION}-${LINUX_KERNEL}/" *
   TIME g "更改名称后的固件，也是最终上传使用的"
   ls -1
 fi

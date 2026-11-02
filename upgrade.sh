@@ -18,7 +18,7 @@ function Diy_Part1() {
 
 
 function Diy_Part2() {
-	export UPDATE_TAG="Update-${TARGET_BOARD}"
+	export UPDATE_TAG="Update-${TARGET_BOARD}${VARIANT_TAG}"
 	export FILESETC_UPDATE="${HOME_PATH}/package/base-files/files/etc/openwrt_update"
 	export GITHUB_PROXY="https://ghfast.top"
 	export RELEASE_DOWNLOAD="\$GITHUB_LINK/releases/download/${UPDATE_TAG}"
