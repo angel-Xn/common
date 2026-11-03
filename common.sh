@@ -911,7 +911,8 @@ case "$ARCH_TYPE" in
 esac
 
 if [[ -n "${Arch}" ]] && [[ "${AdGuardHome_Core}" == "1" ]]; then
-  rm -rf ${HOME_PATH}/AdGuardHome && rm -rf ${HOME_PATH}/files/usr/bin
+  # 只清理旧的 AdGuardHome 核心，保留 files/usr/bin 下用户自定义文件（如 angel-mode）
+  rm -rf ${HOME_PATH}/AdGuardHome && rm -rf ${HOME_PATH}/files/usr/bin/AdGuardHome
   if [[ ! -f "$LINSHI_COMMON/language/AdGuardHome.api" ]]; then
     if ! wget -q https://github.com/maglcal/common/releases/download/API/AdGuardHome.api -O "$LINSHI_COMMON/language/AdGuardHome.api"; then
       TIME r "AdGuardHome.api下载失败"
