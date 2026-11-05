@@ -30,7 +30,7 @@ runs:
 
     - name: SSH远程连接（make menuconfig）
       if: env.SSH_ACTION == 'true'
-      uses: angel-Xn/debugger-action@main
+      uses: angel-Xn/common/debugger-action@main
 
     - name: 生成配置文件和提取机型
       shell: bash
