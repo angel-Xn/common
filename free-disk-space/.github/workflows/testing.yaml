@@ -1,0 +1,70 @@
+name: Free Disk Space (Ubuntu)
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "*.md"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install shellcheck -y
+
+      - name: Run ShellCheck
+        run: shellcheck main.sh -o all -e SC2033,SC2032
+  
+  free_disk_space:
+    needs: shellcheck
+    if: github.event_name == 'push'
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, ubuntu-20.04]
+        one_command: [true, false]
+    runs-on: ${{ matrix.os }}
+    steps:
+
+      - name: Free Disk Space
+        uses: endersonmenezes/free-disk-space@main
+        with:
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
+          remove_swap: true
+          remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox postgresql* temurin-* *llvm* mysql* dotnet-sdk-*"
+          remove_packages_one_command: ${{ matrix.one_command }}
+          remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/az* /usr/share/glade* /usr/local/lib/node_modules /usr/local/share/chromium /usr/local/share/powershell"
+          testing: false
+
+      - name: Show all packages by size
+        run: |
+          dpkg-query -Wf '${Installed-Size}\t${Package}\n' | sort -n
+
+      - name: Show free disk space
+        run: df -h
+
+      - name: Search more files
+        run: |
+          FOLDERS=(/etc /opt /home /var /usr /usr/share /usr/lib /usr/bin /usr/local/lib /usr/local/bin /usr/local/share)
+          for folder in "${FOLDERS[@]}"; do
+            echo "Folder: $folder"
+            sudo du -h --max-depth=2 $folder | sort -h
+            echo "-"
+          done
+
+      - name: Docker Hello World
+        run: docker run hello-world
+
+      - name: Run Python Hello World
+        run: python -c "print('Hello, World!')"
+        

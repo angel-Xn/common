@@ -6,7 +6,7 @@ AUTOUPDATE_VERSION=8.0
 
 function Diy_Part1() {
 	find . -type d -name 'luci-app-autoupdate' | xargs -i rm -rf {}
-        if git clone -q --single-branch --depth=1 --branch=main https://github.com/angel-Xn/luci-app-autoupdate $HOME_PATH/package/luci-app-autoupdate; then
+        if ( gitsvn https://github.com/angel-Xn/common/tree/main/luci-app-autoupdate $HOME_PATH/package/luci-app-autoupdate ); then
         	if ! grep -q "luci-app-autoupdate" "${HOME_PATH}/include/target.mk"; then
 			sed -i 's?DEFAULT_PACKAGES:=?DEFAULT_PACKAGES:=luci-app-autoupdate luci-app-ttyd ?g' ${HOME_PATH}/include/target.mk
 		fi

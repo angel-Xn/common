@@ -1,0 +1,74 @@
+#!/bin/sh /etc/rc.common
+START=99
+
+# 运行自动更新的函数
+run_autoupdate() {
+    local config_section="$1"
+    local enable
+    local use_no_config_update
+    local minute
+    local hour
+    local week
+    local update_command
+    local luci_url
+    local update_url_file_content
+    local current_update_url
+
+    # 从 UCI 配置中获取启用状态和勾选框状态
+    enable=$(uci get "autoupdate.$config_section.enable")
+    use_no_config_update=$(uci get "autoupdate.$config_section.use_no_config_update")
+
+    if [ "$enable" == "1" ]; then
+        # 从 UCI 配置中获取时间相关设置
+        week=$(uci get "autoupdate.$config_section.week")
+        [ "$week" == "7" ] && week="*"
+        minute=$(uci get "autoupdate.$config_section.minute")
+        hour=$(uci get "autoupdate.$config_section.hour")
+
+        # 从 crontab 中删除与 AutoUpdate 相关的任务
+        crontab -l | grep -v AutoUpdate | crontab -
+
+        # 根据勾选框状态选择命令
+        if [ "$use_no_config_update" == "1" ]; then
+            update_command="AutoUpdate -k"
+        else
+            update_command="AutoUpdate -u"
+        fi
+
+        # 添加新的自动更新任务到 crontab
+        (crontab -l 2>/dev/null; echo "$minute $hour * * $week $update_command") | crontab -
+        /etc/init.d/cron restart
+    fi
+
+    # 获取 LuCI 和配置文件中的更新 URL
+    luci_url=$(uci get "autoupdate.$config_section.github")
+    update_url_file_content=$(cat /etc/openwrt_update)
+    current_update_url=$(echo "$update_url_file_content" | awk -F'=' '/GITHUB_LINK=/ {gsub(/"/, "", $2); print $2}')
+
+    # 检查并更新 URL（如果不同）
+    if [ -n "$luci_url" ] && [ "$luci_url" != "$current_update_url" ]; then
+        escaped_luci_url=$(printf '%s\n' "$luci_url" | sed 's:[\/&]:\\&:g')
+        sed -i "s#GITHUB_LINK=.*#GITHUB_LINK=\"$escaped_luci_url\"#" /etc/openwrt_update
+        sleep 1
+        /etc/init.d/uhttpd restart
+    fi
+}
+
+# 启动函数
+start() {
+    config_load autoupdate
+    config_foreach run_autoupdate login
+}
+
+# 停止函数
+stop() {
+    # 从 crontab 中删除与 AutoUpdate 相关的任务
+    crontab -l | grep -v AutoUpdate | crontab -
+    /etc/init.d/cron restart
+}
+
+# 重启函数
+restart() {
+    stop
+    start
+}

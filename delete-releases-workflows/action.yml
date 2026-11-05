@@ -1,0 +1,220 @@
+name: "delete-releases-workflows"
+author: "ophub"
+description: "Delete older releases and workflow runs"
+
+inputs:
+  repo:
+    description: "Repo name in the form of <owner>/<repo>"
+    required: false
+    default: "${{ github.repository }}"
+  delete_releases:
+    description: "Whether to delete releases records"
+    required: true
+  delete_tags:
+    description: "Whether to delete associated tags"
+    required: false
+    default: "true"
+  prerelease_option:
+    description: "Whether to differentiate pre-release"
+    required: false
+    default: "all"
+  releases_keep_latest:
+    description: "How many latest releases to keep"
+    required: false
+    default: "90"
+  releases_keep_keyword:
+    description: "Keyword of the keep releases"
+    required: false
+    default: ""
+  max_releases_fetch:
+    description: "Maximum number of releases to fetch in total"
+    required: false
+    default: "200"
+  delete_workflows:
+    description: "Whether to delete workflows records"
+    required: true
+  workflows_keep_latest:
+    description: "How many latest workflow runs to keep"
+    required: false
+    default: "90"
+  workflows_keep_keyword:
+    description: "Keywords for keep workflows"
+    required: false
+    default: ""
+  max_workflows_fetch:
+    description: "Maximum number of workflow runs to fetch in total"
+    required: false
+    default: "200"
+  out_log:
+    description: "Output a list log for each step"
+    required: false
+    default: "false"
+  gh_token:
+    description: "GitHub token with appropriate permissions"
+    required: true
+    default: ""
+  debug:
+    description: "Enable debug output"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Ensure proper jq installation
+      shell: bash
+      run: |
+        # ......
+        INFO="[\033[94m 信息 \033[0m]"
+        ERROR="[\033[31m ERROR \033[0m]"
+        
+        # 只在非DEBUG模式下静默jq安装过程
+        if [ "$DEBUG" != "true" ]; then
+          exec 3>&1 4>&2  # 保存原始stdout和stderr
+          exec >/dev/null 2>&1
+        fi
+
+        install_jq() {
+          if command -v jq &>/dev/null; then
+            echo -e "${INFO} 移除旧版jq..." 2>/dev/null
+            sudo snap remove jq 2>/dev/null || true
+            sudo apt-get remove -y jq 2>/dev/null || true
+          fi
+        
+          echo -e "${INFO} 安装jq..." 2>/dev/null
+          if ! command -v jq &>/dev/null; then
+            sudo apt-get -qq update && sudo apt-get -qq install -y jq curl
+          fi
+          
+          if ! command -v jq &>/dev/null; then
+            echo -e "${ERROR} jq 安装失败" 2>/dev/null
+            return 1
+          fi
+          echo -e "${INFO} jq 安装成功 $(which jq)" 2>/dev/null
+          return 0
+        }
+
+        if ! install_jq; then
+          exit 1
+        fi
+
+        # 恢复原始输出
+        if [ "$DEBUG" != "true" ]; then
+          exec 1>&3 2>&4
+        fi
+      env:
+        DEBIAN_FRONTEND: noninteractive
+        DEBUG: ${{ inputs.debug }}
+
+    - name: Validate inputs and run cleanup
+      shell: bash
+      run: |
+        # ......
+        ERROR="[\033[31m ERROR \033[0m]"
+        INFO="[\033[94m 信息 \033[0m]"
+        SUCCESS="[\033[92m SUCCESS \033[0m]"
+
+        error_msg() {
+          echo -e "${ERROR} $1" >&2
+          exit 1
+        }
+
+        cd "${{ github.action_path }}" || {
+          error_msg "无法切换到action目录: ${{ github.action_path }}"
+        }
+
+        validate_input() {
+          local var="$1"
+          local param_name="$2"
+          local type="$3"
+          local max="${4:-1000}"
+
+          var=$(echo "$var" | tr -d '[:space:]' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+          case "$type" in
+            boolean)
+              [[ ! "$var" =~ ^(true|false)$ ]] && 
+                error_msg "参数 $param_name 的值: '$var' 无效，必须是 'true' 或 'false'"
+              ;;
+            prerelease)
+              [[ ! "$var" =~ ^(true|false|all)$ ]] && 
+                error_msg "参数 $param_name 的值: '$var' 无效，必须是 'true', 'false' 或 'all'"
+              ;;
+            integer)
+              [[ -z "$var" ]] && error_msg "参数 $param_name 不能为空"
+              [[ ! "$var" =~ ^[0-9]+$ ]] && 
+                error_msg "参数 $param_name 的值: '$var' 无效，必须是非负整数"
+              [[ $var -gt $max ]] && 
+                error_msg "参数 $param_name 的值: '$var' 无效，最大值是 $max"
+              ;;
+            keyword)
+              [[ "$var" =~ ^(true|false)$ ]] && var=""
+              ;;
+            repo)
+              local user_pattern='^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$'
+              local repo_pattern='^[a-zA-Z0-9_]([a-zA-Z0-9_.-]*[a-zA-Z0-9_])?$'
+              IFS='/' read -r username reponame <<< "$var"
+              [[ ${#username} -lt 1 || ${#username} -gt 39 || 
+                ${#reponame} -lt 1 || ${#reponame} -gt 100 || 
+                "$reponame" =~ \.git$ ||
+                ! "$username" =~ $user_pattern || 
+                ! "$reponame" =~ $repo_pattern ]] && 
+                error_msg "仓库格式错误: $var"
+              ;;
+            *)
+              error_msg "未知的验证类型: $type"
+              ;;
+          esac
+
+          echo "$var"
+        }
+
+        # 验证并清理输入参数
+        repo=$(validate_input "${{ inputs.repo }}" "repo" "repo")
+        delete_releases=$(validate_input "${{ inputs.delete_releases }}" "delete_releases" "boolean")
+        delete_tags=$(validate_input "${{ inputs.delete_tags }}" "delete_tags" "boolean")
+        prerelease_option=$(validate_input "${{ inputs.prerelease_option }}" "prerelease_option" "prerelease")
+        releases_keep_latest=$(validate_input "${{ inputs.releases_keep_latest }}" "releases_keep_latest" "integer")
+        releases_keep_keyword=$(validate_input "${{ inputs.releases_keep_keyword }}" "releases_keep_keyword" "keyword")
+        max_releases_fetch=$(validate_input "${{ inputs.max_releases_fetch }}" "max_releases_fetch" "integer" 1000)
+        delete_workflows=$(validate_input "${{ inputs.delete_workflows }}" "delete_workflows" "boolean")
+        workflows_keep_latest=$(validate_input "${{ inputs.workflows_keep_latest }}" "workflows_keep_latest" "integer")
+        workflows_keep_keyword=$(validate_input "${{ inputs.workflows_keep_keyword }}" "workflows_keep_keyword" "keyword")
+        max_workflows_fetch=$(validate_input "${{ inputs.max_workflows_fetch }}" "max_workflows_fetch" "integer" 1000)
+        out_log=$(validate_input "${{ inputs.out_log }}" "out_log" "boolean")
+        gh_token="${{ inputs.gh_token }}"
+
+        # 必需参数验证
+        [[ -z "$gh_token" ]] && error_msg "必须提供有效的 GitHub token"
+
+        # 验证gh_token有效性
+        echo -e "${INFO} 正在验证 GitHub Token..."
+        response=$(curl -s -o /dev/null -w "%{http_code}" \
+          -H "Authorization: Bearer ${gh_token}" \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          "https://api.github.com/user")
+
+        [[ "$response" -ne 200 ]] && error_msg "GitHub Token 验证失败 (HTTP $response)，请检查 Token 是否正确且有足够权限"
+
+        # 构建命令参数
+        cmd_args=()
+        cmd_args+=(-r "$repo")
+        cmd_args+=(-a "$delete_releases")
+        cmd_args+=(-t "$delete_tags")
+        cmd_args+=(-p "$prerelease_option")
+        cmd_args+=(-l "$releases_keep_latest")
+        [[ -n "$releases_keep_keyword" ]] && cmd_args+=(-w "$releases_keep_keyword")
+        cmd_args+=(-c "$max_releases_fetch")
+        cmd_args+=(-s "$delete_workflows")
+        cmd_args+=(-d "$workflows_keep_latest")
+        [[ -n "$workflows_keep_keyword" ]] && cmd_args+=(-k "$workflows_keep_keyword")
+        cmd_args+=(-h "$max_workflows_fetch")
+        cmd_args+=(-g "$gh_token")
+        cmd_args+=(-o "$out_log")
+
+        # 执行清理脚本
+        [[ ! -f "del.sh" ]] && error_msg "找不到清理脚本 del.sh"
+
+        chmod +x del.sh
+        ./del.sh "${cmd_args[@]}"

@@ -1,0 +1,72 @@
+name: "Free Disk Space - Ubuntu Runners"
+description: "A Simple Action to Free Up Disk Space on GitHub Hosted Runners"
+author: "Enderson Menezes <mail@enderson.dev>"
+
+branding:
+  icon: "command"
+  color: "gray-dark"
+
+inputs:
+  principal_dir:
+    description: "Principal Directory Mount Point"
+    required: false
+    default: "/"
+  remove_android:
+    description: "Remove Android Files"
+    required: false
+    default: "false"
+  remove_dotnet:
+    description: "Remove .NET Files"
+    required: false
+    default: "false"
+  remove_haskell:
+    description: "Remove Haskell Files"
+    required: false
+    default: "false"
+  remove_tool_cache:
+    description: "Remove Tool Cache"
+    required: false
+    default: "false"
+  remove_swap:
+    description: "Remove Swap"
+    required: false
+    default: "false"
+  remove_docker_image:
+    description: 'Removes cached Docker images. (frees ~3 GB)'
+    required: false
+    default: 'false'
+  remove_packages:
+    description: "Remove Packages (Eg. azure-cli google-cloud-cli) Read the documentation for more information"
+    required: false
+    default: ""
+  remove_folders:
+    description: "Remove Folders (Eg. /usr/share/dotnet)"
+    required: false
+    default: ""
+  testing:
+    description: "Testing (Use to develop locally)"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - shell: bash
+      name: "Free Disk Space"
+      id: free-disk-space
+      run: |
+        ACTION_PATH="${{ github.action_path }}"
+        cd "$ACTION_PATH"
+        chmod +x main.sh
+        ./main.sh
+      env:
+        principal_dir: ${{ inputs.principal_dir }}
+        remove_android: ${{ inputs.remove_android }}
+        remove_dotnet: ${{ inputs.remove_dotnet }}
+        remove_haskell: ${{ inputs.remove_haskell }}
+        remove_tool_cache: ${{ inputs.remove_tool_cache }}
+        remove_swap: ${{ inputs.remove_swap }}
+        remove_docker_image: ${{ inputs.remove_docker_image }}
+        remove_packages: ${{ inputs.remove_packages }}
+        remove_folders: ${{ inputs.remove_folders }}
+        testing: ${{ inputs.testing }}
