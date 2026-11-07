@@ -5,44 +5,55 @@ PWD_DIR="$(pwd)"
 function install_mustrelyon(){
 echo -e "\033[36m开始升级ubuntu插件和安装依赖.....\033[0m"
 # 网络操作全部限时+重试,防止 runner 网络抖动导致无限挂起
+# DPkg::Lock::Timeout: 防止 unattended-upgrades 占锁时 apt 无限等锁
 cat > /etc/apt/apt.conf.d/80-timeouts <<'EOF'
 Acquire::Retries "3";
 Acquire::http::Timeout "30";
 Acquire::https::Timeout "30";
+DPkg::Lock::Timeout "120";
 EOF
+# 停掉自动升级服务,避免抢 dpkg 锁
+systemctl stop unattended-upgrades 2>/dev/null || true
+systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+# 注意:Acquire::Timeout 只管"无数据",慢速滴流连接照样无限拖;
+# 所以下面每条 apt/网络命令都套 timeout 硬上限,超时就跳过继续。
 # 更新ubuntu源
-apt-get update -y
+echo "[$(date +%H:%M:%S)] apt-get update"
+timeout 600 apt-get update -y || echo "apt update 超时/失败,继续"
 
-# 升级ubuntu
-apt-get full-upgrade -y
+# 升级ubuntu(最佳努力,超时跳过)
+echo "[$(date +%H:%M:%S)] apt-get full-upgrade"
+timeout 900 apt-get full-upgrade -y || echo "系统升级超时/失败,继续安装依赖"
 
 # 安装编译openwrt的依赖
-apt-get install -y ecj fastjar file gettext java-propose-classpath time xsltproc lib32gcc-s1
-apt-get install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+echo "[$(date +%H:%M:%S)] apt-get install 基础依赖"
+timeout 600 apt-get install -y ecj fastjar file gettext java-propose-classpath time xsltproc lib32gcc-s1 || true
+echo "[$(date +%H:%M:%S)] apt-get install 主依赖清单"
+timeout 1800 apt-get install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
 bzip2 ccache cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext \
 genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev \
 libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev \
 libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf \
 python2 python3 python3-pip python3-cryptography python3-docutils python3-ply python3-pyelftools python3-requests
 python3-setuptools python3-distutils python3-netifaces qemu-utils rsync scons squashfs-tools subversion swig \
-texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev || echo "主依赖安装超时/失败,继续(后续编译按需补)"
 
 # alist依赖
-apt-get install -y libfuse-dev
+timeout 600 apt-get install -y libfuse-dev || true
 
 # N1打包需要的依赖(jq 用 apt 安装,弃用 snap:snapd 拉商店是著名挂死点)
-apt-get install -y rename pigz clang gnupg jq
+timeout 600 apt-get install -y rename pigz clang gnupg jq || true
 EXTRA_DEPS="$(curl -fsSL --retry 2 --max-time 60 https://tinyurl.com/ubuntu2204-make-openwrt 2>/dev/null || true)"
 if [ -n "${EXTRA_DEPS}" ]; then
-    apt-get install -y ${EXTRA_DEPS} || true
+    timeout 600 apt-get install -y ${EXTRA_DEPS} || true
 fi
 
 # 安装gcc g++
 GCC_VERSION="13"
 timeout 300 add-apt-repository --yes ppa:ubuntu-toolchain-r/test || echo "toolchain PPA 添加失败,继续用系统 gcc"
-apt-get update -y
-apt-get install -y gcc-${GCC_VERSION} || true
-apt-get install -y g++-${GCC_VERSION} || true
+timeout 600 apt-get update -y || true
+timeout 900 apt-get install -y gcc-${GCC_VERSION} || true
+timeout 900 apt-get install -y g++-${GCC_VERSION} || true
 update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${GCC_VERSION} 60
 update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-${GCC_VERSION} 60
 update-alternatives --set gcc /usr/bin/gcc-${GCC_VERSION} || true
@@ -58,11 +69,12 @@ source /etc/profile.d/go.sh
 cd $PWD_DIR
 
 # 安装nodejs yarn
-curl -fsSL --retry 2 --max-time 120 https://deb.nodesource.com/setup_22.x | sudo -E bash - || echo "nodesource 源配置失败,继续"
-apt-get install -y nodejs
+curl -fsSL --retry 2 --max-time 120 https://deb.nodesource.com/setup_22.x -o /tmp/nodesource_setup.sh && \
+  timeout 300 bash /tmp/nodesource_setup.sh || echo "nodesource 源配置失败,继续"
+timeout 600 apt-get install -y nodejs || true
 curl -sL --retry 2 --max-time 60 https://dl.yarnpkg.com/debian/pubkey.gpg | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/yarnkey.gpg
 echo "deb [signed-by=/usr/share/keyrings/yarnkey.gpg] https://dl.yarnpkg.com/debian stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
-apt-get update -y && apt-get install -y yarn gh
+timeout 600 apt-get update -y && timeout 600 apt-get install -y yarn gh || echo "yarn/gh 安装失败,继续"
 
 cd $TMP_DIR
 # 安装UPX
@@ -110,7 +122,7 @@ chmod 0755 "/usr/bin/modify-firmware"
 }
 
 function update_apt_source(){
-apt-get autoremove -y --purge
+timeout 600 apt-get autoremove -y --purge || true
 apt-get clean -y
 
 python2.7 --version
