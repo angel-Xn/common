@@ -219,6 +219,15 @@ else
   ./scripts/feeds update -a
 fi
 
+# iStore/taskd 中文 lmo 命名修复（幂等，防同步源覆盖回退）：
+# lede 的 luci.mk(openwrt-25.12) 把 po 目录 zh-cn 折叠映射为 zh_Hans，而 danshui 源这两个包的
+# 自定义 src/Makefile 用 $(lang) 直接拼 lmo 文件名，只会生成 *.zh_Hans.lmo；
+# LuCI 运行时按语言键 zh-cn 加载 *.zh-cn.lmo，故界面英文。输出名改用 LuCI 语言代码（zh_Hans→zh-cn）。
+for _mf in "${HOME_PATH}/feeds/danshui/luci-app-store/luci/luci-app-store/src/Makefile" \
+           "${HOME_PATH}/feeds/danshui/luci-app-store/luci/luci-lib-taskd/src/Makefile"; do
+  [[ -f "${_mf}" ]] && sed -i 's#\.$(lang)\.lmo#.$(firstword $(LUCI_LC_ALIAS.$(lang)) $(lang)).lmo#g' "${_mf}"
+done
+
 # 更新feeds后再次修改补充
 cd ${HOME_PATH}
 z="luci-theme-argon,luci-app-argon-config,luci-theme-Butterfly,luci-theme-netgear,luci-theme-atmaterial, \
