@@ -38,14 +38,59 @@ TIME() {
     esac
 }
 
+# 多通道下载云端API快照：配置代理 -> 公共代理轮询 -> 直连兜底
+# 成功（内容含 assets）才替换正式缓存，失败时保留旧缓存文件
+Download_api() {
+    for _p in "${GITHUB_PROXY}" "https://gh-proxy.com" "https://ghproxy.net" "https://gh.llkk.cc" ""; do
+        if [ -n "$_p" ]; then
+            _u="${_p}/${RELEASE_DOWNLOAD}/zzz_api"
+        else
+            _u="${RELEASE_DOWNLOAD}/zzz_api"
+        fi
+        rm -f "${tmpapi_version}.new"
+        if uclient-fetch --no-check-certificate --timeout=30 "$_u" -O "${tmpapi_version}.new" >/dev/null 2>&1 || \
+           wget -q --no-check-certificate --no-use-server-timestamps --timeout=30 -t 1 "$_u" -O "${tmpapi_version}.new" >/dev/null 2>&1; then
+            if grep -qE "assets" "${tmpapi_version}.new" >/dev/null 2>&1; then
+                mv -f "${tmpapi_version}.new" "$tmpapi_version"
+                TIME g "云端API获取成功: $_u"
+                return 0
+            fi
+        fi
+        rm -f "${tmpapi_version}.new"
+    done
+    return 1
+}
+
+# 多通道下载固件（带进度），成功（文件非空）返回 0
+Download_firmware() {
+    for _p in "${GITHUB_PROXY}" "https://gh-proxy.com" "https://ghproxy.net" "https://gh.llkk.cc" ""; do
+        if [ -n "$_p" ]; then
+            _u="${_p}/${RELEASE_DOWNLOAD}/${REMOTE_FIRMWARE}"
+        else
+            _u="${RELEASE_DOWNLOAD}/${REMOTE_FIRMWARE}"
+        fi
+        TIME g "下载通道: $_u"
+        rm -f "$DOWNLOAD_PATH/$REMOTE_FIRMWARE.tmp"
+        if wget -q --show-progress --no-check-certificate --timeout=60 -t 1 "$_u" -O "$DOWNLOAD_PATH/$REMOTE_FIRMWARE.tmp" 2>/dev/null || \
+           uclient-fetch --no-check-certificate --timeout=600 "$_u" -O "$DOWNLOAD_PATH/$REMOTE_FIRMWARE.tmp" 2>/dev/null; then
+            if [ -s "$DOWNLOAD_PATH/$REMOTE_FIRMWARE.tmp" ]; then
+                mv -f "$DOWNLOAD_PATH/$REMOTE_FIRMWARE.tmp" "$DOWNLOAD_PATH/$REMOTE_FIRMWARE"
+                return 0
+            fi
+        fi
+        rm -f "$DOWNLOAD_PATH/$REMOTE_FIRMWARE.tmp"
+    done
+    return 1
+}
+
 # Remote_detection 函数，用于远程检测必要文件和获取 API 数据
 Remote_detection() {
     # 清理临时版本文件
     if [ "$Select" = "c" ]; then
-       rm -rf tmp/*_version
+       rm -f /tmp/cloud_version /tmp/api_version /tmp/tags_version
     else
-       rm -rf "$tmpcloud_version" >/dev/null 2>&1
-       rm -rf "tmp/tags_version" >/dev/null 2>&1
+       rm -f "$tmpcloud_version" >/dev/null 2>&1
+       rm -f /tmp/tags_version >/dev/null 2>&1
     fi
 
     # 检查 openwrt_update 文件是否包含必要信息
@@ -54,8 +99,6 @@ Remote_detection() {
        grep -qE "RELEASE_DOWNLOAD" "/etc/openwrt_update"; then
         chmod 755 /etc/openwrt_update
         . /etc/openwrt_update
-        RELEASE_DOWNLOAD1="${GITHUB_PROXY}/${RELEASE_DOWNLOAD}"
-        RELEASE_DOWNLOAD2="${RELEASE_DOWNLOAD}"
     else
         TIME r "缺少openwrt_update文件"
     fi
@@ -89,28 +132,19 @@ Remote_detection() {
 
     # 检查api文件，不超过3分钟不需要重新下载
     if [ -f "$tmpapi_version" ] && [ -f "/tmp/autotimes" ]; then
-        file_info=$(ls -l --full-time "$tmpapi_version" 2>/dev/null)
-        if [ -n "$file_info" ]; then
-            file_time=$(echo "$file_info" | awk '{print $6, $7}')
-            file_mtime=$(date -d "$file_time" +%s 2>/dev/null)
-            TIME g "文件时间戳：$file_mtime"
-            if [ $? -eq 0 ]; then
-                current_time=$(date +%s)
-                TIME g "系统时间戳：$current_time"
-                time_diff=$(( (current_time - file_mtime) / 60 ))
-                TIME g "比对后的时间：$time_diff"
-                [ $time_diff -ge 3 ] && \
-                if ! uclient-fetch --no-check-certificate --timeout=40 "$RELEASE_DOWNLOAD1/zzz_api" -O "$tmpapi_version"; then
-                    # 若 wget 失败，使用 uclient-fetch 下载
-                    wget -q --show-progress --no-check-certificate --no-use-server-timestamps --timeout=40 -t 1 "$RELEASE_DOWNLOAD2/zzz_api" -O "$tmpapi_version"
-                fi
+        file_mtime=$(stat -c %Y "$tmpapi_version" 2>/dev/null)
+        if [ -n "$file_mtime" ]; then
+            current_time=$(date +%s)
+            time_diff=$(( (current_time - file_mtime) / 60 ))
+            TIME g "API缓存已存在(${time_diff}分钟前)"
+            if [ "$time_diff" -ge 3 ]; then
+                Download_api || TIME g "刷新云端API失败,暂用本地缓存"
             fi
+        else
+            Download_api
         fi
     else
-        if ! uclient-fetch --no-check-certificate --timeout=40 "$RELEASE_DOWNLOAD1/zzz_api" -O "$tmpapi_version"; then
-          # 若 wget 失败，使用 uclient-fetch 下载
-          wget -q --show-progress --no-check-certificate --no-use-server-timestamps --timeout=40 -t 1 "$RELEASE_DOWNLOAD2/zzz_api" -O "$tmpapi_version"
-        fi
+        Download_api
     fi
 
     # 检查 API 数据是否包含有效信息
@@ -218,25 +252,10 @@ Remote_download() {
     fi
 
     TIME g "开始下载云端固件"
-    if [ "$(curl -I -s --connect-timeout 8 google.com -w %{http_code} | tail -n1)" = "301" ]; then
-        echo "$RELEASE_DOWNLOAD2/$REMOTE_FIRMWARE"
-        if ! wget -q --show-progress --no-check-certificate -t 1 "$RELEASE_DOWNLOAD2/$REMOTE_FIRMWARE" -O "$DOWNLOAD_PATH/$REMOTE_FIRMWARE"; then
-          # 若 wget 失败，使用 uclient-fetch 下载
-          uclient-fetch --no-check-certificate --timeout=600 "$RELEASE_DOWNLOAD1/$REMOTE_FIRMWARE" -O "$DOWNLOAD_PATH/$REMOTE_FIRMWARE"
-        fi
+    if ! Download_firmware; then
+        TIME r "云端固件 $REMOTE_FIRMWARE 下载失败,所有下载通道均不可达"
     else
-        echo "$RELEASE_DOWNLOAD1/$REMOTE_FIRMWARE"
-        if ! wget -q --show-progress --no-check-certificate -t 1 "$RELEASE_DOWNLOAD1/$REMOTE_FIRMWARE" -O "$DOWNLOAD_PATH/$REMOTE_FIRMWARE"; then
-          # 若 wget 失败，使用 uclient-fetch 下载
-          uclient-fetch --no-check-certificate --timeout=600 "$RELEASE_DOWNLOAD2/$REMOTE_FIRMWARE" -O "$DOWNLOAD_PATH/$REMOTE_FIRMWARE"
-        fi
-    fi
-
-    # 检查下载是否成功
-    if [ $? -eq 0 ]; then
         TIME g "云端固件 $REMOTE_FIRMWARE 下载成功"
-    else
-        TIME r "云端固件 $REMOTE_FIRMWARE 下载失败"
     fi
 
     # 计算本地固件的 MD5 和 SHA256 组合值
